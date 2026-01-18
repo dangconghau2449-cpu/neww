@@ -1,0 +1,200 @@
+-- Khởi tạo ScreenGui chính
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Parent = game:GetService("CoreGui")
+ScreenGui.Name = "AsylumUltimate"
+
+-- Cấu hình mặc định
+_G.HitboxEnabled = false
+_G.HitboxSize = 10
+_G.HitboxTeamCheck = true
+_G.EspEnabled = false
+
+-- Nút Đóng/Mở Menu chính
+local ToggleUI = Instance.new("TextButton")
+ToggleUI.Parent = ScreenGui
+ToggleUI.Size = UDim2.new(0, 50, 0, 50)
+ToggleUI.Position = UDim2.new(0.02, 0, 0.4, 0)
+ToggleUI.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+ToggleUI.Text = "MENU"
+ToggleUI.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleUI.Font = Enum.Font.GothamBold
+Instance.new("UICorner", ToggleUI).CornerRadius = UDim.new(1, 0)
+
+-- Main Frame
+local MainFrame = Instance.new("Frame")
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+MainFrame.Position = UDim2.new(0.5, -175, 0.5, -125)
+MainFrame.Size = UDim2.new(0, 350, 0, 250)
+MainFrame.ClipsDescendants = true
+MainFrame.Draggable = true
+MainFrame.Active = true
+Instance.new("UICorner", MainFrame)
+Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(0, 170, 255)
+
+-- Sidebar
+local Sidebar = Instance.new("Frame")
+Sidebar.Parent = MainFrame
+Sidebar.Size = UDim2.new(0, 100, 1, 0)
+Sidebar.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+local SList = Instance.new("UIListLayout", Sidebar)
+SList.Padding = UDim.new(0, 5)
+SList.HorizontalAlignment = "Center"
+
+-- Hệ thống Quản lý Tab/Pages
+local Pages = {}
+local function CreatePage(name)
+    local Page = Instance.new("ScrollingFrame", MainFrame)
+    Page.Size = UDim2.new(1, -110, 1, -20)
+    Page.Position = UDim2.new(0, 110, 0, 10)
+    Page.BackgroundTransparency = 1
+    Page.Visible = false
+    Page.CanvasSize = UDim2.new(0, 0, 2, 0)
+    Page.ScrollBarThickness = 2
+    
+    local PList = Instance.new("UIListLayout", Page)
+    PList.Padding = UDim.new(0, 10)
+    
+    local TabBtn = Instance.new("TextButton", Sidebar)
+    TabBtn.Size = UDim2.new(0, 90, 0, 40)
+    TabBtn.Text = name
+    TabBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    TabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Instance.new("UICorner", TabBtn)
+    
+    TabBtn.MouseButton1Click:Connect(function()
+        for _, p in pairs(Pages) do p.Visible = false end
+        Page.Visible = true
+    end)
+    
+    Pages[name] = Page
+    return Page
+end
+
+-- Tạo các Tab
+local MainTab = CreatePage("Hệ Thống")
+local CombatTab = CreatePage("Chiến Đấu")
+local VisualTab = CreatePage("Hiển Thị")
+local ClassicTab = CreatePage("Cổ Điển") -- Tab mới từ Menu Classic
+Pages["Hệ Thống"].Visible = true
+
+-- Hàm thêm Button
+local function AddButton(page, text, callback)
+    local btn = Instance.new("TextButton", page)
+    btn.Size = UDim2.new(1, -10, 0, 35)
+    btn.Text = text
+    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Instance.new("UICorner", btn)
+    btn.MouseButton1Click:Connect(function() 
+        callback(btn)
+    end)
+end
+
+-- ================== LOGIC TÍNH NĂNG ==================
+
+-- TAB HỆ THỐNG
+AddButton(MainTab, "Dịch Chuyển (TP)", function()
+    game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(-5.22, 517.48, 410.63)
+end)
+
+AddButton(MainTab, "Đổi Server (Hop)", function()
+    local ts = game:GetService("TeleportService")
+    local servers = game:GetService("HttpService"):JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Asc&limit=100"))
+    for _, s in pairs(servers.data) do
+        if s.playing < s.maxPlayers and s.id ~= game.JobId then ts:TeleportToPlaceInstance(game.PlaceId, s.id) break end
+    end
+end)
+
+-- TAB CHIẾN ĐẤU (HITBOX)
+AddButton(CombatTab, "Hitbox: TẮT", function(btn)
+    _G.HitboxEnabled = not _G.HitboxEnabled
+    btn.Text = _G.HitboxEnabled and "Hitbox: BẬT" or "Hitbox: TẮT"
+    btn.BackgroundColor3 = _G.HitboxEnabled and Color3.fromRGB(0, 170, 0) or Color3.fromRGB(40, 40, 40)
+end)
+
+AddButton(CombatTab, "Bỏ qua đội: BẬT", function(btn)
+    _G.HitboxTeamCheck = not _G.HitboxTeamCheck
+    btn.Text = _G.HitboxTeamCheck and "Bỏ qua đội: BẬT" or "Bỏ qua đội: TẮT"
+end)
+
+AddButton(CombatTab, "Tăng Size Hitbox (".._G.HitboxSize..")", function(btn)
+    _G.HitboxSize = (_G.HitboxSize >= 50) and 5 or (_G.HitboxSize + 5)
+    btn.Text = "Tăng Size Hitbox (".._G.HitboxSize..")"
+end)
+
+-- TAB HIỂN THỊ (ESP)
+AddButton(VisualTab, "ESP Box: TẮT", function(btn)
+    _G.EspEnabled = not _G.EspEnabled
+    btn.Text = _G.EspEnabled and "ESP Box: BẬT" or "ESP Box: TẮT"
+    btn.BackgroundColor3 = _G.EspEnabled and Color3.fromRGB(0, 170, 0) or Color3.fromRGB(40, 40, 40)
+end)
+
+-- TAB CỔ ĐIỂN (Nơi chứa các tính năng từ Menu cũ)
+AddButton(ClassicTab, "Thông tin Classic", function()
+    print("Đây là các tính năng từ Classic Menu đã được ghép.")
+end)
+
+-- ================== HỆ THỐNG VÒNG LẶP ==================
+
+-- Loop Hitbox
+task.spawn(function()
+    while task.wait(0.5) do
+        pcall(function()
+            for _, v in pairs(game.Players:GetPlayers()) do
+                if v ~= game.Players.LocalPlayer and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+                    local isSameTeam = (v.Team == game.Players.LocalPlayer.Team)
+                    if _G.HitboxEnabled then
+                        if _G.HitboxTeamCheck and isSameTeam then
+                            v.Character.HumanoidRootPart.Size = Vector3.new(2, 2, 1)
+                            v.Character.HumanoidRootPart.Transparency = 1
+                        else
+                            v.Character.HumanoidRootPart.Size = Vector3.new(_G.HitboxSize, _G.HitboxSize, _G.HitboxSize)
+                            v.Character.HumanoidRootPart.Transparency = 0.7
+                            v.Character.HumanoidRootPart.Color = v.TeamColor.Color
+                            v.Character.HumanoidRootPart.CanCollide = false
+                        end
+                    else
+                        v.Character.HumanoidRootPart.Size = Vector3.new(2, 2, 1)
+                        v.Character.HumanoidRootPart.Transparency = 1
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+-- Loop ESP
+task.spawn(function()
+    while task.wait(0.1) do
+        pcall(function()
+            for _, v in pairs(game.Players:GetPlayers()) do
+                if v ~= game.Players.LocalPlayer and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+                    local highlight = v.Character:FindFirstChild("ESPHighlight")
+                    if _G.EspEnabled then
+                        if not highlight then
+                            highlight = Instance.new("Highlight", v.Character)
+                            highlight.Name = "ESPHighlight"
+                        end
+                        highlight.FillColor = v.TeamColor.Color
+                        highlight.OutlineColor = Color3.new(1, 1, 1)
+                        highlight.FillTransparency = 0.5
+                    else
+                        if highlight then highlight:Destroy() end
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+-- Hiệu ứng Đóng/Mở Menu chính
+local menuOpen = true
+ToggleUI.MouseButton1Click:Connect(function()
+    menuOpen = not menuOpen
+    local ts = game:GetService("TweenService")
+    ts:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.QuartOut), {
+        Size = menuOpen and UDim2.new(0, 350, 0, 250) or UDim2.new(0, 0, 0, 0),
+        BackgroundTransparency = menuOpen and 0 or 1
+    }):Play()
+end)
