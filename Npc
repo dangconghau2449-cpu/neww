@@ -1,0 +1,705 @@
+-- ============================================================
+--  MEN AT ARMS - FULL CUSTOMIZATION MENU v3
+--  Hitbox (Head/Body) + ESP Tên + ESP Line + Aimbot + FOV
+-- ============================================================
+--  Phím tắt:
+--  [RightShift] = Bật/tắt Menu
+--  [E] = Giữ để Aimbot (có thể đổi trong menu)
+--  [×] = Thu nhỏ thành nút nổi ⚔ (kéo được)
+-- ============================================================
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Camera = workspace.CurrentCamera
+local LP = Players.LocalPlayer
+
+-- ========== CONFIG ==========
+local Config = {
+    HitboxEnabled = true,
+    HitboxSize = 6,
+    HitboxTransparency = 0.5,
+    HitboxVisualize = true,
+    HitboxVisualColor = Color3.fromRGB(255, 50, 50),
+    HitboxHeadEnabled = true,
+    HitboxBodyEnabled = true,
+    ESPEnabled = true,
+    ESPNameW = 200,
+    ESPNameH = 50,
+    ESPTextSize = 20,
+    ESPTextScaled = true,
+    ESPOffsetY = 2,
+    ESPTextColor = Color3.fromRGB(255, 255, 255),
+    ESPStrokeColor = Color3.fromRGB(0, 0, 0),
+    ESPLineEnabled = true,
+    ESPLineColor = Color3.fromRGB(255, 80, 80),
+    ESPLineThickness = 1,
+    AimbotEnabled = true,
+    AimbotKey = Enum.KeyCode.E,
+    AimbotPart = "Head",
+    AimbotFOV = 150,
+    AimbotSmoothness = 0.2,
+    AimbotShowFOV = true,
+}
+
+local hitboxData = {}
+local aimbotActive = false
+local npcCache = {}
+
+-- ========== NPC DETECTION ==========
+local function isNPC(model)
+    if not model or not model:IsA("Model") then return false end
+    if Players:GetPlayerFromCharacter(model) then return false end
+    local h = model:FindFirstChildOfClass("Humanoid")
+    return h ~= nil and h.Health > 0
+end
+
+local function rebuildNPCCache()
+    local t = {}
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if isNPC(obj) then t[obj] = true end
+    end
+    npcCache = t
+end
+
+-- ========== HITBOX MODULE ==========
+local function removeBox(part)
+    local b = part:FindFirstChild("MBAA_HitboxVisual")
+    if b then b:Destroy() end
+end
+
+local function addBox(part)
+    local b = part:FindFirstChild("MBAA_HitboxVisual")
+    if not b then
+        b = Instance.new("BoxHandleAdornment")
+        b.Name = "MBAA_HitboxVisual"
+        b.Adornee = part
+        b.AlwaysOnTop = true
+        b.ZIndex = 5
+        b.Parent = part
+    end
+    b.Size = part.Size
+    b.Color3 = Config.HitboxVisualColor
+    b.Transparency = 0.5
+    return b
+end
+
+local function getHitboxPartNames()
+    local names = {}
+    if Config.HitboxHeadEnabled then names["Head"] = true end
+    if Config.HitboxBodyEnabled then
+        names["HumanoidRootPart"] = true
+        names["UpperTorso"] = true
+        names["Torso"] = true
+    end
+    return names
+end
+
+local function applyHitbox()
+    if not Config.HitboxEnabled then
+        if next(hitboxData) then
+            for part, data in pairs(hitboxData) do
+                if part and part.Parent then
+                    part.Size = data.Size
+                    part.Transparency = data.Transparency
+                    part.CanCollide = data.CanCollide
+                    removeBox(part)
+                end
+            end
+            hitboxData = {}
+        end
+        return
+    end
+
+    local names = getHitboxPartNames()
+    local active = {}
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if isNPC(obj) then
+            for name in pairs(names) do
+                local part = obj:FindFirstChild(name)
+                if part and part:IsA("BasePart") then
+                    active[part] = true
+                    if not hitboxData[part] then
+                        hitboxData[part] = {
+                            Size = part.Size,
+                            Transparency = part.Transparency,
+                            CanCollide = part.CanCollide,
+                        }
+                    end
+                    part.Size = Vector3.new(Config.HitboxSize, Config.HitboxSize, Config.HitboxSize)
+                    part.Transparency = Config.HitboxTransparency
+                    part.CanCollide = false
+                    if Config.HitboxVisualize then
+                        local box = addBox(part)
+                        box.Size = part.Size
+                        box.Color3 = Config.HitboxVisualColor
+                    else
+                        removeBox(part)
+                    end
+                end
+            end
+        end
+    end
+
+    for part, data in pairs(hitboxData) do
+        if not active[part] or not part.Parent then
+            if part and part.Parent then
+                part.Size = data.Size
+                part.Transparency = data.Transparency
+                part.CanCollide = data.CanCollide
+                removeBox(part)
+            end
+            hitboxData[part] = nil
+        end
+    end
+end
+
+-- ========== ESP MODULE ==========
+local function applyESP(npc)
+    local head = npc:FindFirstChild("Head")
+    if not head then return end
+    local old = head:FindFirstChild("MBAA_ESP")
+    if old then old:Destroy() end
+    if not Config.ESPEnabled then return end
+
+    local bb = Instance.new("BillboardGui")
+    bb.Name = "MBAA_ESP"
+    bb.Adornee = head
+    bb.Size = UDim2.new(0, Config.ESPNameW, 0, Config.ESPNameH)
+    bb.StudsOffset = Vector3.new(0, Config.ESPOffsetY, 0)
+    bb.AlwaysOnTop = true
+    bb.Parent = head
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = npc.Name
+    lbl.TextColor3 = Config.ESPTextColor
+    lbl.TextStrokeColor3 = Config.ESPStrokeColor
+    lbl.TextStrokeTransparency = 0
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextScaled = Config.ESPTextScaled
+    if not Config.ESPTextScaled then
+        lbl.TextSize = Config.ESPTextSize
+    end
+    lbl.Parent = bb
+end
+
+local function refreshESP()
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if isNPC(obj) then applyESP(obj) end
+    end
+end
+
+local function clearESP()
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") then
+            local head = obj:FindFirstChild("Head")
+            if head then
+                local tag = head:FindFirstChild("MBAA_ESP")
+                if tag then tag:Destroy() end
+            end
+        end
+    end
+end
+
+-- ========== AIMBOT ==========
+local function getClosestNPC()
+    local closest, best = nil, Config.AimbotFOV
+    local center = Camera.ViewportSize / 2
+    for npc in pairs(npcCache) do
+        if isNPC(npc) then
+            local part = npc:FindFirstChild(Config.AimbotPart)
+            if part then
+                local sp, on = Camera:WorldToViewportPoint(part.Position)
+                if on and sp.Z > 0 then
+                    local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+                    if d < best then best = d; closest = part end
+                end
+            end
+        end
+    end
+    return closest
+end
+
+RunService.RenderStepped:Connect(function()
+    if not Config.AimbotEnabled or not aimbotActive then return end
+    local t = getClosestNPC()
+    if t then
+        Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, t.Position), Config.AimbotSmoothness)
+    end
+end)
+
+UserInputService.InputBegan:Connect(function(i, gp)
+    if gp then return end
+    if i.KeyCode == Config.AimbotKey then aimbotActive = true end
+end)
+UserInputService.InputEnded:Connect(function(i, gp)
+    if gp then return end
+    if i.KeyCode == Config.AimbotKey then aimbotActive = false end
+end)
+
+-- ========== FOV INDICATOR ==========
+local pg = LP:WaitForChild("PlayerGui")
+local fovGui = Instance.new("ScreenGui")
+fovGui.Name = "MBAA_FOV"; fovGui.IgnoreGuiInset = true; fovGui.ResetOnSpawn = false
+fovGui.DisplayOrder = 5; fovGui.Parent = pg
+
+local fovFrame = Instance.new("Frame")
+fovFrame.Size = UDim2.new(0, Config.AimbotFOV*2, 0, Config.AimbotFOV*2)
+fovFrame.Position = UDim2.new(0.5, -Config.AimbotFOV, 0.5, -Config.AimbotFOV)
+fovFrame.BackgroundTransparency = 1
+fovFrame.BorderSizePixel = 0
+fovFrame.Parent = fovGui
+Instance.new("UICorner", fovFrame).CornerRadius = UDim.new(1, 0)
+local fovStroke = Instance.new("UIStroke", fovFrame)
+fovStroke.Color = Color3.fromRGB(0, 255, 255)
+fovStroke.Thickness = 2
+fovStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+local function updateFOVIndicator()
+    fovFrame.Size = UDim2.new(0, Config.AimbotFOV*2, 0, Config.AimbotFOV*2)
+    fovFrame.Position = UDim2.new(0.5, -Config.AimbotFOV, 0.5, -Config.AimbotFOV)
+    fovFrame.Visible = Config.AimbotShowFOV and Config.AimbotEnabled
+end
+updateFOVIndicator()
+
+-- ========== ESP LINE MODULE ==========
+local espLineGui = Instance.new("ScreenGui")
+espLineGui.Name = "MBAA_ESPLines"
+espLineGui.IgnoreGuiInset = true
+espLineGui.ResetOnSpawn = false
+espLineGui.DisplayOrder = 4
+espLineGui.Parent = pg
+
+local espLines = {}
+
+local function destroyAllLines()
+    for _, f in pairs(espLines) do f:Destroy() end
+    espLines = {}
+end
+
+local function updateESPLinesSafe()
+    if not Config.ESPLineEnabled then
+        if next(espLines) then destroyAllLines() end
+        return
+    end
+
+    for npc, frame in pairs(espLines) do
+        if not npc.Parent or not isNPC(npc) then
+            frame:Destroy(); espLines[npc] = nil
+        end
+    end
+
+    local vs = Camera.ViewportSize
+    local startPt = Vector2.new(vs.X / 2, vs.Y)
+
+    for npc in pairs(npcCache) do
+        if isNPC(npc) then
+            local head = npc:FindFirstChild("Head") or npc:FindFirstChild("HumanoidRootPart")
+            if head then
+                local sp, on = Camera:WorldToViewportPoint(head.Position)
+                if on and sp.Z > 0 then
+                    local frame = espLines[npc]
+                    if not frame then
+                        frame = Instance.new("Frame")
+                        frame.AnchorPoint = Vector2.new(0, 0.5)
+                        frame.BorderSizePixel = 0
+                        frame.Parent = espLineGui
+                        espLines[npc] = frame
+                    end
+                    local delta = Vector2.new(sp.X, sp.Y) - startPt
+                    frame.Position = UDim2.fromOffset(startPt.X, startPt.Y)
+                    frame.Size = UDim2.fromOffset(delta.Magnitude, Config.ESPLineThickness)
+                    frame.Rotation = math.deg(math.atan2(delta.Y, delta.X))
+                    frame.BackgroundColor3 = Config.ESPLineColor
+                    frame.Visible = true
+                elseif espLines[npc] then
+                    espLines[npc].Visible = false
+                end
+            end
+        end
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    pcall(updateESPLinesSafe)
+end)
+
+-- ========== UI BUILDERS ==========
+local function new(cls, props, parent)
+    local i = Instance.new(cls)
+    for k, v in pairs(props or {}) do
+        if k ~= "Parent" then pcall(function() i[k] = v end) end
+    end
+    if parent then i.Parent = parent end
+    return i
+end
+
+local function makeToggle(parent, labelText, getValue, setValue, order)
+    local frame = new("Frame", {Size = UDim2.new(1,0,0,34), BackgroundColor3 = Color3.fromRGB(35,35,48), BorderSizePixel = 0, LayoutOrder = order}, parent)
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0,6)
+    new("TextLabel", {Size = UDim2.new(1,-60,1,0), Position = UDim2.new(0,10,0,0), BackgroundTransparency = 1,
+        Text = labelText, TextColor3 = Color3.fromRGB(220,220,240), Font = Enum.Font.Gotham, TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left}, frame)
+    local btn = new("TextButton", {Size = UDim2.new(0,44,0,22), Position = UDim2.new(1,-54,0.5,-11),
+        BorderSizePixel = 0, Text = "", AutoButtonColor = false}, frame)
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,11)
+    local knob = new("Frame", {Size = UDim2.new(0,18,0,18), Position = UDim2.new(0,2,0.5,-9), BorderSizePixel = 0}, btn)
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(0,9)
+    local function upd()
+        local on = getValue()
+        btn.BackgroundColor3 = on and Color3.fromRGB(70,180,110) or Color3.fromRGB(70,70,90)
+        knob.BackgroundColor3 = on and Color3.fromRGB(230,255,240) or Color3.fromRGB(180,180,200)
+        TweenService:Create(knob, TweenInfo.new(0.15), {Position = on and UDim2.new(1,-20,0.5,-9) or UDim2.new(0,2,0.5,-9)}):Play()
+    end
+    upd()
+    btn.MouseButton1Click:Connect(function() setValue(not getValue()); upd() end)
+    return frame
+end
+
+local function makeSlider(parent, labelText, minV, maxV, getValue, setValue, order, isInt)
+    local frame = new("Frame", {Size = UDim2.new(1,0,0,50), BackgroundColor3 = Color3.fromRGB(35,35,48), BorderSizePixel = 0, LayoutOrder = order}, parent)
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0,6)
+    new("TextLabel", {Size = UDim2.new(0.6,-10,0,20), Position = UDim2.new(0,10,0,4), BackgroundTransparency = 1,
+        Text = labelText, TextColor3 = Color3.fromRGB(220,220,240), Font = Enum.Font.Gotham, TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left}, frame)
+    local valLbl = new("TextLabel", {Size = UDim2.new(0.4,-10,0,20), Position = UDim2.new(0.6,0,0,4), BackgroundTransparency = 1,
+        TextColor3 = Color3.fromRGB(150,200,255), Font = Enum.Font.GothamBold, TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Right}, frame)
+    valLbl.Text = tostring(getValue())
+    local bar = new("Frame", {Size = UDim2.new(1,-20,0,6), Position = UDim2.new(0,10,0,32),
+        BackgroundColor3 = Color3.fromRGB(60,60,80), BorderSizePixel = 0}, frame)
+    Instance.new("UICorner", bar).CornerRadius = UDim.new(0,3)
+    local fill = new("Frame", {Size = UDim2.new((getValue()-minV)/(maxV-minV),0,1,0),
+        BackgroundColor3 = Color3.fromRGB(100,150,255), BorderSizePixel = 0}, bar)
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(0,3)
+    local hit = new("TextButton", {Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1, Text = ""}, bar)
+    local dragging = false
+    local function setFromX(x)
+        local rel = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+        local val = minV + (maxV-minV)*rel
+        if isInt then val = math.floor(val+0.5) end
+        setValue(val)
+        fill.Size = UDim2.new(rel,0,1,0)
+        valLbl.Text = isInt and tostring(math.floor(val+0.5)) or string.format("%.2f", val)
+    end
+    hit.MouseButton1Down:Connect(function()
+        dragging = true
+        setFromX(UserInputService:GetMouseLocation().X)
+    end)
+    UserInputService.InputChanged:Connect(function(i)
+        if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
+            setFromX(i.Position.X)
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+    end)
+    return frame
+end
+
+local function makeKeybind(parent, labelText, getValue, setValue, order)
+    local frame = new("Frame", {Size = UDim2.new(1,0,0,34), BackgroundColor3 = Color3.fromRGB(35,35,48), BorderSizePixel = 0, LayoutOrder = order}, parent)
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0,6)
+    new("TextLabel", {Size = UDim2.new(0.5,-10,1,0), Position = UDim2.new(0,10,0,0), BackgroundTransparency = 1,
+        Text = labelText, TextColor3 = Color3.fromRGB(220,220,240), Font = Enum.Font.Gotham, TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left}, frame)
+    local btn = new("TextButton", {Size = UDim2.new(0.5,-20,0,24), Position = UDim2.new(0.5,10,0.5,-12),
+        BackgroundColor3 = Color3.fromRGB(50,50,70), TextColor3 = Color3.new(1,1,1),
+        Font = Enum.Font.GothamBold, TextSize = 12, Text = getValue().Name, BorderSizePixel = 0}, frame)
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
+    btn.MouseButton1Click:Connect(function()
+        btn.Text = "..."
+        local conn
+        conn = UserInputService.InputBegan:Connect(function(i, gp)
+            if gp then return end
+            if i.UserInputType == Enum.UserInputType.Keyboard then
+                setValue(i.KeyCode); btn.Text = i.KeyCode.Name; conn:Disconnect()
+            end
+        end)
+    end)
+    return frame
+end
+
+local function makeTextInput(parent, labelText, getValue, setValue, order)
+    local frame = new("Frame", {Size = UDim2.new(1,0,0,34), BackgroundColor3 = Color3.fromRGB(35,35,48), BorderSizePixel = 0, LayoutOrder = order}, parent)
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0,6)
+    new("TextLabel", {Size = UDim2.new(0.5,-10,1,0), Position = UDim2.new(0,10,0,0), BackgroundTransparency = 1,
+        Text = labelText, TextColor3 = Color3.fromRGB(220,220,240), Font = Enum.Font.Gotham, TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left}, frame)
+    local tb = new("TextBox", {Size = UDim2.new(0.5,-20,0,24), Position = UDim2.new(0.5,10,0.5,-12),
+        BackgroundColor3 = Color3.fromRGB(50,50,70), TextColor3 = Color3.new(1,1,1),
+        Font = Enum.Font.Gotham, TextSize = 12, Text = tostring(getValue()), ClearTextOnFocus = false,
+        BorderSizePixel = 0}, frame)
+    Instance.new("UICorner", tb).CornerRadius = UDim.new(0,4)
+    tb.FocusLost:Connect(function() setValue(tb.Text) end)
+    return frame
+end
+
+local PRESETS = {
+    Color3.fromRGB(255,255,255), Color3.fromRGB(255,80,80), Color3.fromRGB(80,255,80),
+    Color3.fromRGB(80,150,255), Color3.fromRGB(255,255,80), Color3.fromRGB(255,100,255),
+    Color3.fromRGB(255,150,0), Color3.fromRGB(0,0,0),
+}
+
+local function makeColorCycle(parent, labelText, getValue, setValue, order)
+    local frame = new("Frame", {Size = UDim2.new(1,0,0,34), BackgroundColor3 = Color3.fromRGB(35,35,48), BorderSizePixel = 0, LayoutOrder = order}, parent)
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0,6)
+    new("TextLabel", {Size = UDim2.new(0.5,-10,1,0), Position = UDim2.new(0,10,0,0), BackgroundTransparency = 1,
+        Text = labelText, TextColor3 = Color3.fromRGB(220,220,240), Font = Enum.Font.Gotham, TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left}, frame)
+    local btn = new("TextButton", {Size = UDim2.new(0.5,-20,0,22), Position = UDim2.new(0.5,10,0.5,-11),
+        BackgroundColor3 = getValue(), Text = "", BorderSizePixel = 0}, frame)
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
+    local stroke = Instance.new("UIStroke", btn); stroke.Thickness = 1; stroke.Color = Color3.fromRGB(120,120,140)
+    local idx = 1
+    for i, c in ipairs(PRESETS) do
+        if c.R == getValue().R and c.G == getValue().G and c.B == getValue().B then idx = i break end
+    end
+    btn.MouseButton1Click:Connect(function()
+        idx = (idx % #PRESETS) + 1
+        setValue(PRESETS[idx]); btn.BackgroundColor3 = PRESETS[idx]
+    end)
+    return frame
+end
+
+-- ========== MENU ==========
+local menuGui = Instance.new("ScreenGui")
+menuGui.Name = "MBAA_Menu"; menuGui.ResetOnSpawn = false; menuGui.IgnoreGuiInset = true
+menuGui.DisplayOrder = 10; menuGui.Enabled = true
+menuGui.Parent = pg
+
+local menu = new("Frame", {
+    Size = UDim2.new(0,430,0,560), Position = UDim2.new(0,60,0,60),
+    BackgroundColor3 = Color3.fromRGB(22,22,32), BorderSizePixel = 0, Active = true,
+    Visible = true,
+}, menuGui)
+Instance.new("UICorner", menu).CornerRadius = UDim.new(0,10)
+Instance.new("UIStroke", menu).Color = Color3.fromRGB(70,70,110)
+
+-- Title bar
+local titleBar = new("Frame", {Size = UDim2.new(1,0,0,42), BackgroundColor3 = Color3.fromRGB(38,38,55), BorderSizePixel = 0}, menu)
+Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0,10)
+new("TextLabel", {Size = UDim2.new(1,-80,1,0), Position = UDim2.new(0,15,0,0), BackgroundTransparency = 1,
+    Text = "⚔ MAA Menu v3  •  Hitbox / ESP / Aimbot",
+    TextColor3 = Color3.fromRGB(180,180,255), Font = Enum.Font.GothamBold, TextSize = 15,
+    TextXAlignment = Enum.TextXAlignment.Left}, titleBar)
+
+local closeBtn = new("TextButton", {Size = UDim2.new(0,28,0,28), Position = UDim2.new(1,-36,0,7),
+    BackgroundColor3 = Color3.fromRGB(200,60,60), Text = "×", TextColor3 = Color3.new(1,1,1),
+    Font = Enum.Font.GothamBold, TextSize = 20, BorderSizePixel = 0}, titleBar)
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,6)
+
+-- Drag chỉ từ titleBar
+do
+    local dragging, dragStart, startPos
+    titleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true; dragStart = input.Position; startPos = menu.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            menu.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
+-- ========== FLOATING REOPEN BUTTON ==========
+local reopenBtn = new("TextButton", {
+    Size = UDim2.new(0, 54, 0, 54),
+    Position = UDim2.new(0, 60, 0, 60),
+    BackgroundColor3 = Color3.fromRGB(70, 70, 120),
+    Text = "⚔", TextColor3 = Color3.new(1,1,1),
+    Font = Enum.Font.GothamBold, TextSize = 24,
+    BorderSizePixel = 0, Visible = false,
+}, menuGui)
+Instance.new("UICorner", reopenBtn).CornerRadius = UDim.new(1, 0)
+local reopenStroke = Instance.new("UIStroke", reopenBtn)
+reopenStroke.Color = Color3.fromRGB(140, 140, 200); reopenStroke.Thickness = 2
+
+do
+    local dragging, dragStart, startPos, moved
+    reopenBtn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true; moved = false
+            dragStart = input.Position; startPos = reopenBtn.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            if delta.Magnitude > 3 then moved = true end
+            reopenBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+    reopenBtn.MouseButton1Click:Connect(function()
+        if moved then return end
+        menu.Position = reopenBtn.Position
+        menu.Visible = true
+    end)
+end
+
+closeBtn.MouseButton1Click:Connect(function()
+    reopenBtn.Position = menu.Position
+    menu.Visible = false
+end)
+
+menu:GetPropertyChangedSignal("Visible"):Connect(function()
+    reopenBtn.Visible = not menu.Visible
+end)
+
+-- ========== TABS (KEY KHÔNG DẤU CÁCH) ==========
+local tabNames  = {"Hitbox", "ESP", "ESPLine", "Aimbot"}
+local tabLabels = {Hitbox="Hitbox", ESP="ESP Tên", ESPLine="ESP Line", Aimbot="Aimbot"}
+local tabBar = new("Frame", {Size = UDim2.new(1,-20,0,36), Position = UDim2.new(0,10,0,50), BackgroundTransparency = 1}, menu)
+local tabContents, tabButtons = {}, {}
+
+local content = new("ScrollingFrame", {
+    Size = UDim2.new(1,-20,1,-100), Position = UDim2.new(0,10,0,92),
+    BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 4,
+    ScrollBarImageColor3 = Color3.fromRGB(100,100,150),
+    CanvasSize = UDim2.new(0,0,0,0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    ScrollingDirection = Enum.ScrollingDirection.Y, ElasticBehavior = Enum.ElasticBehavior.Never,
+}, menu)
+
+for i, key in ipairs(tabNames) do
+    local btn = new("TextButton", {
+        Size = UDim2.new(1/#tabNames-0.01,0,1,0), Position = UDim2.new((i-1)/#tabNames,0,0,0),
+        BackgroundColor3 = Color3.fromRGB(42,42,60), Text = tabLabels[key],
+        TextColor3 = Color3.fromRGB(190,190,220),
+        Font = Enum.Font.GothamBold, TextSize = 12, BorderSizePixel = 0,
+    }, tabBar)
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+    tabButtons[key] = btn
+
+    local page = new("Frame", {
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        Visible = (i == 1),
+    }, content)
+    local ll = Instance.new("UIListLayout", page)
+    ll.Padding = UDim.new(0,6); ll.SortOrder = Enum.SortOrder.LayoutOrder
+    local pad = Instance.new("UIPadding", page)
+    pad.PaddingTop = UDim.new(0,4); pad.PaddingBottom = UDim.new(0,8)
+    tabContents[key] = page
+
+    btn.MouseButton1Click:Connect(function()
+        for n, p in pairs(tabContents) do p.Visible = (n == key) end
+        for n, b in pairs(tabButtons) do
+            b.BackgroundColor3 = (n == key) and Color3.fromRGB(70,70,120) or Color3.fromRGB(42,42,60)
+        end
+    end)
+end
+tabButtons["Hitbox"].BackgroundColor3 = Color3.fromRGB(70,70,120)
+
+local orderCounters = {Hitbox=0, ESP=0, ESPLine=0, Aimbot=0}
+local function O(page) orderCounters[page] = orderCounters[page] + 1; return orderCounters[page] end
+
+-- ===== HITBOX TAB =====
+makeToggle(tabContents.Hitbox, "Bật Hitbox (phóng to vùng sát thương)", function() return Config.HitboxEnabled end,
+    function(v) Config.HitboxEnabled = v; applyHitbox() end, O("Hitbox"))
+makeToggle(tabContents.Hitbox, "Hitbox ĐẦU (Head)", function() return Config.HitboxHeadEnabled end,
+    function(v) Config.HitboxHeadEnabled = v; applyHitbox() end, O("Hitbox"))
+makeToggle(tabContents.Hitbox, "Hitbox THÂN (Body)", function() return Config.HitboxBodyEnabled end,
+    function(v) Config.HitboxBodyEnabled = v; applyHitbox() end, O("Hitbox"))
+makeSlider(tabContents.Hitbox, "Kích thước Hitbox (studs)", 1, 25, function() return Config.HitboxSize end,
+    function(v) Config.HitboxSize = v end, O("Hitbox"), true)
+makeSlider(tabContents.Hitbox, "Độ trong suốt", 0, 1, function() return Config.HitboxTransparency end,
+    function(v) Config.HitboxTransparency = v end, O("Hitbox"), false)
+makeToggle(tabContents.Hitbox, "Hiển thị viền vùng sát thương", function() return Config.HitboxVisualize end,
+    function(v) Config.HitboxVisualize = v end, O("Hitbox"))
+makeColorCycle(tabContents.Hitbox, "Màu vùng sát thương", function() return Config.HitboxVisualColor end,
+    function(v) Config.HitboxVisualColor = v end, O("Hitbox"))
+
+-- ===== ESP TAB =====
+makeToggle(tabContents.ESP, "Bật ESP Tên NPC", function() return Config.ESPEnabled end,
+    function(v) Config.ESPEnabled = v; if v then refreshESP() else clearESP() end end, O("ESP"))
+makeSlider(tabContents.ESP, "Chiều rộng bảng tên (W)", 50, 500, function() return Config.ESPNameW end,
+    function(v) Config.ESPNameW = v; if Config.ESPEnabled then refreshESP() end end, O("ESP"), true)
+makeSlider(tabContents.ESP, "Chiều cao bảng tên (H)", 20, 200, function() return Config.ESPNameH end,
+    function(v) Config.ESPNameH = v; if Config.ESPEnabled then refreshESP() end end, O("ESP"), true)
+makeToggle(tabContents.ESP, "Chữ tự co giãn", function() return Config.ESPTextScaled end,
+    function(v) Config.ESPTextScaled = v; if Config.ESPEnabled then refreshESP() end end, O("ESP"))
+makeSlider(tabContents.ESP, "Kích thước chữ", 8, 72, function() return Config.ESPTextSize end,
+    function(v) Config.ESPTextSize = v; if Config.ESPEnabled then refreshESP() end end, O("ESP"), true)
+makeSlider(tabContents.ESP, "Khoảng cách trên đầu", 0, 10, function() return Config.ESPOffsetY end,
+    function(v) Config.ESPOffsetY = v; if Config.ESPEnabled then refreshESP() end end, O("ESP"), false)
+makeColorCycle(tabContents.ESP, "Màu chữ", function() return Config.ESPTextColor end,
+    function(v) Config.ESPTextColor = v; if Config.ESPEnabled then refreshESP() end end, O("ESP"))
+makeColorCycle(tabContents.ESP, "Màu viền chữ", function() return Config.ESPStrokeColor end,
+    function(v) Config.ESPStrokeColor = v; if Config.ESPEnabled then refreshESP() end end, O("ESP"))
+
+-- ===== ESP LINE TAB =====
+makeToggle(tabContents.ESPLine, "Bật ESP Line", function() return Config.ESPLineEnabled end,
+    function(v) Config.ESPLineEnabled = v; if not v then destroyAllLines() end end, O("ESPLine"))
+makeSlider(tabContents.ESPLine, "Độ dày đường kẻ", 1, 10, function() return Config.ESPLineThickness end,
+    function(v) Config.ESPLineThickness = v end, O("ESPLine"), true)
+makeColorCycle(tabContents.ESPLine, "Màu đường kẻ", function() return Config.ESPLineColor end,
+    function(v) Config.ESPLineColor = v end, O("ESPLine"))
+
+-- ===== AIMBOT TAB =====
+makeToggle(tabContents.Aimbot, "Bật Aimbot", function() return Config.AimbotEnabled end,
+    function(v) Config.AimbotEnabled = v; updateFOVIndicator() end, O("Aimbot"))
+makeKeybind(tabContents.Aimbot, "Phím kích hoạt (giữ)", function() return Config.AimbotKey end,
+    function(v) Config.AimbotKey = v end, O("Aimbot"))
+makeTextInput(tabContents.Aimbot, "Bộ phận nhắm (Head/Torso)", function() return Config.AimbotPart end,
+    function(v) Config.AimbotPart = v end, O("Aimbot"))
+makeSlider(tabContents.Aimbot, "Bán kính FOV (pixel)", 30, 600, function() return Config.AimbotFOV end,
+    function(v) Config.AimbotFOV = v; updateFOVIndicator() end, O("Aimbot"), true)
+makeSlider(tabContents.Aimbot, "Độ mượt (0=nhanh, 1=chậm)", 0.02, 1, function() return Config.AimbotSmoothness end,
+    function(v) Config.AimbotSmoothness = v end, O("Aimbot"), false)
+makeToggle(tabContents.Aimbot, "Hiển thị vòng FOV", function() return Config.AimbotShowFOV end,
+    function(v) Config.AimbotShowFOV = v; updateFOVIndicator() end, O("Aimbot"))
+
+-- ========== TOGGLE MENU KEY ==========
+UserInputService.InputBegan:Connect(function(i, gp)
+    if gp then return end
+    if i.KeyCode == Enum.KeyCode.RightShift then
+        menu.Visible = not menu.Visible
+    end
+end)
+
+-- ========== MAIN LOOPS ==========
+task.spawn(function()
+    while menuGui.Parent do
+        pcall(rebuildNPCCache)
+        task.wait(0.5)
+    end
+end)
+
+task.spawn(function()
+    while menuGui.Parent do
+        if Config.HitboxEnabled then pcall(applyHitbox) end
+        task.wait(0.25)
+    end
+end)
+
+task.spawn(function()
+    while menuGui.Parent do
+        if Config.ESPEnabled then pcall(refreshESP) end
+        task.wait(1.5)
+    end
+end)
+
+workspace.DescendantAdded:Connect(function(d)
+    task.wait(0.2)
+    if isNPC(d) then
+        if Config.ESPEnabled then applyESP(d) end
+        if Config.HitboxEnabled then pcall(applyHitbox) end
+    end
+end)
+
+task.wait(1)
+if Config.ESPEnabled then refreshESP() end
+print("[MBAA v3] Menu đã load! RightShift bật/tắt menu. Bấm × để thu nhỏ thành nút ⚔.")
